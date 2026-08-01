@@ -26,7 +26,8 @@ pub fn detect_face_focus(
     end_sec: f64,
     work_dir: &Path,
 ) -> Result<Option<FaceFocus>> {
-    if !vision_dependencies_available() {
+    let python = vision_python_command(work_dir);
+    if !vision_dependencies_available(&python) {
         return Ok(None);
     }
 
@@ -34,7 +35,7 @@ pub fn detect_face_focus(
     let script_path = work_dir.join("face_focus.py");
     std::fs::write(&script_path, FACE_FOCUS_SCRIPT).context("writing face focus helper")?;
 
-    let output = Command::new(python_command())
+    let output = Command::new(python)
         .arg(&script_path)
         .arg(source_path)
         .arg(format!("{start_sec:.3}"))
@@ -54,19 +55,27 @@ pub fn detect_face_focus(
     Ok(result.focus_x.is_some().then_some(result))
 }
 
-fn vision_dependencies_available() -> bool {
-    Command::new(python_command())
+fn vision_dependencies_available(python: &Path) -> bool {
+    Command::new(python)
         .args(["-c", "import cv2, mediapipe"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
-fn python_command() -> &'static str {
+fn vision_python_command(work_dir: &Path) -> std::path::PathBuf {
     if cfg!(target_os = "windows") {
-        "py"
+        let isolated_python = work_dir.join(".venv").join("Scripts").join("python.exe");
+        if isolated_python.is_file() {
+            return isolated_python;
+        }
+        std::path::PathBuf::from("py")
     } else {
-        "python3"
+        let isolated_python = work_dir.join(".venv").join("bin").join("python");
+        if isolated_python.is_file() {
+            return isolated_python;
+        }
+        std::path::PathBuf::from("python3")
     }
 }
 

@@ -132,7 +132,7 @@ function App() {
     return (localStorage.getItem("autoshorts_llm_engine") as "claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter") || "local";
   });
   const [localLlmModel, setLocalLlmModel] = useState(() => {
-    return localStorage.getItem("autoshorts_local_llm_model") || "llama3.2";
+    return localStorage.getItem("autoshorts_local_llm_model") || "qwen3.5:27b";
   });
   const [deepgramKey, setDeepgramKey] = useState(() => {
     return localStorage.getItem("autoshorts_deepgram_key") || "";
@@ -1211,7 +1211,7 @@ function Onboarding({
   refreshEnv,
 }: OnboardingProps) {
   const [setupMode, setSetupMode] = useState<"choose" | "local" | "cloud" | "downloading">("choose");
-  const [selectedModel, setSelectedModel] = useState<string>("llama3.2");
+  const [selectedModel, setSelectedModel] = useState<string>("qwen3.5:27b");
 
   const [dgKey, setDgKey] = useState(initialDeepgramKey);
   const [antKey, setAntKey] = useState(initialAnthropicKey);
@@ -1409,6 +1409,17 @@ function Onboarding({
                   <p>Select a model to download:</p>
 
                   <div className="model-cards">
+                    <div
+                      className={`model-card ${selectedModel === "qwen3.5:27b" ? "active" : ""}`}
+                      onClick={() => setSelectedModel("qwen3.5:27b")}
+                    >
+                      <div className="model-card-header">
+                        <h5>Qwen 3.5 27B</h5>
+                        <span className="model-size">~17 GB</span>
+                      </div>
+                      <p>Best local moment detection for high-end PCs. Recommended for 64GB RAM and RTX 4090-class hardware.</p>
+                    </div>
+
                     <div
                       className={`model-card ${selectedModel === "llama3.2" ? "active" : ""}`}
                       onClick={() => setSelectedModel("llama3.2")}

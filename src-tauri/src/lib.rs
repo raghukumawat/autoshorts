@@ -454,7 +454,7 @@ async fn generate_candidates(
         "local" | "ollama" => {
             let model = model_name
                 .or_else(|| std::env::var("OLLAMA_MODEL").ok())
-                .unwrap_or_else(|| "llama3.2".to_string());
+                .unwrap_or_else(|| "qwen3.5:27b".to_string());
             llm::detect_candidates_with_local_llm(&normalized, &model)
                 .await
                 .map_err(to_command_error)?

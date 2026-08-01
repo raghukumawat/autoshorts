@@ -146,11 +146,19 @@ pub fn whisper_cli_exists() -> bool {
 }
 
 pub fn whisper_python_exists() -> bool {
-    std::process::Command::new("python3")
+    std::process::Command::new(python_command())
         .args(["-c", "import whisper"])
         .output()
         .map(|out| out.status.success())
         .unwrap_or(false)
+}
+
+fn python_command() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "py"
+    } else {
+        "python3"
+    }
 }
 
 fn normalize_whisper_raw_json(raw: serde_json::Value) -> Result<NormalizedTranscript> {
@@ -322,13 +330,13 @@ if __name__ == "__main__":
         let output_json_path_str = output_json_path.to_string_lossy().to_string();
 
         tokio::task::spawn_blocking(move || {
-            let output = std::process::Command::new("python3")
+            let output = std::process::Command::new(python_command())
                 .arg(&script_path_str)
                 .arg(&audio_path)
                 .arg(&output_json_path_str)
                 .arg("base") // default model size
                 .output()
-                .context("executing python3 transcribe.py")?;
+                .context("executing Python transcription script")?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();

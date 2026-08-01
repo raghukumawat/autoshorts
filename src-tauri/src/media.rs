@@ -126,7 +126,11 @@ pub fn render_flat_clip(
     cmd.args(["-y", "-i", source_path, "-ss", &start, "-to", &end]);
 
     if has_video {
-        let mut filter = "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)'".to_string();
+        // Keep the entire source visible in a 9:16 frame. The earlier centre
+        // crop often removed a second speaker or a product at either side.
+        // The enlarged, blurred copy behind it fills the portrait canvas
+        // without losing the foreground scene.
+        let mut filter = "[0:v]split=2[bgsrc][fgsrc];[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg];[fgsrc]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h):shortest=1,setsar=1".to_string();
         if let Some(drawtext) = drawtext_filters {
             if !drawtext.is_empty() {
                 filter = format!("{},{}", filter, drawtext);

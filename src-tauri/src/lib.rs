@@ -573,15 +573,9 @@ fn render_flat_clip_for_candidate(
     let mut srt_path = None;
     let mut drawtext_filters = None;
 
-    let probe = media::probe_media(&project.source_path).ok();
-    let cropped_width = if let Some(p) = &probe {
-        let iw = p.width.unwrap_or(1920) as f64;
-        let ih = p.height.unwrap_or(1080) as f64;
-        let w = (iw.min(ih * 9.0 / 16.0) / 2.0).floor() * 2.0;
-        w as i64
-    } else {
-        1080
-    };
+    // render_flat_clip now produces a fixed 1080x1920 portrait canvas.
+    // Use that canvas width when positioning caption text.
+    let cropped_width = 1080;
 
     if let Ok(Some(transcript_record)) = state.db.latest_transcript(&project.id) {
         if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {

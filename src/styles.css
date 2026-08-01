@@ -553,6 +553,34 @@ button:disabled {
   border-color: var(--accent-primary);
 }
 
+.activity-status {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  color: var(--accent-text);
+  background: rgba(142, 230, 199, 0.08);
+  border: 1px solid rgba(142, 230, 199, 0.35);
+  border-radius: 9px;
+}
+
+.activity-status strong,
+.activity-status span {
+  display: block;
+}
+
+.activity-status strong {
+  font-size: 12.5px;
+}
+
+.activity-status span {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
 /* Portrait Mockup Container */
 .portrait-preview-container {
   display: flex;
@@ -573,6 +601,19 @@ button:disabled {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+}
+
+.preview-toggle {
+  padding: 0;
+  color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.preview-label {
+  position: absolute;
+  bottom: 4px;
+  font-size: 8px;
+  font-weight: 800;
 }
 
 .candidate-card:hover .portrait-preview-mock {
@@ -663,6 +704,25 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   margin-top: 12px;
+}
+
+.candidate-preview {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.candidate-preview video {
+  width: min(100%, 360px);
+  max-height: 320px;
+  background: #000;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.candidate-preview span {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .clip-status {

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -141,6 +141,8 @@ function App() {
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState("modern-box");
   const [mediaPathToImport, setMediaPathToImport] = useState<string | null>(null);
+  const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
+  const [busyElapsedSeconds, setBusyElapsedSeconds] = useState(0);
 
   // Persistence logic from localStorage
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
@@ -201,6 +203,15 @@ function App() {
     const clip = clipByCandidate.get(candidate.id);
     return clip?.status === "done" && Boolean(clip.captionAssPath);
   }).length;
+  const busyMessage = busy === "moments"
+    ? `Ollama is analysing the transcript with ${localLlmModel || "your selected model"}. The first run can take longer while the model loads.`
+    : busy === "transcribe"
+      ? "Whisper is transcribing the recording locally."
+      : busy === "cut"
+        ? "FFmpeg is rendering the portrait clip."
+        : busy === "import"
+          ? "Importing the recording."
+          : "Updating the project.";
   const canUseCloudKey = environment?.hasDeepgramKey || deepgramKey.trim().length > 0;
   const canUseClaude = environment?.hasAnthropicKey || anthropicKey.trim().length > 0;
   const canUseDeepseek = environment?.hasDeepseekKey || deepseekKey.trim().length > 0;
@@ -253,6 +264,20 @@ function App() {
     }
     void refreshOllamaModels();
   }, [environment?.hasOllama]);
+
+  useEffect(() => {
+    if (busy === "idle") {
+      setBusyElapsedSeconds(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    setBusyElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setBusyElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
 
   useEffect(() => {
     localStorage.setItem("autoshorts_deepgram_key", deepgramKey);
@@ -872,6 +897,16 @@ function App() {
 
               {error && <div className="error-banner">{error}</div>}
 
+              {busy !== "idle" && (
+                <div className="activity-status" role="status">
+                  <Loader2 className="spin" size={17} />
+                  <div>
+                    <strong>{busyMessage}</strong>
+                    <span>Running for {formatElapsed(busyElapsedSeconds)}. Do not close the app; a clear error appears after a failed request instead of waiting forever.</span>
+                  </div>
+                </div>
+              )}
+
               <div className="pipeline-strip">
                 <PipelineStep icon={<AudioLines size={16} />} label="Transcript" done={Boolean(detail.transcript)} />
                 <PipelineStep icon={<Sparkles size={16} />} label="Moments" done={detail.candidates.length > 0} />
@@ -964,19 +999,16 @@ function App() {
                       const isCut = clip?.status === "done" && Boolean(clip.outputPath);
                       return (
                         <article key={candidate.id} className={`candidate-card ${candidate.selected ? "selected" : ""}`}>
-                          {/* 9:16 portrait mockup preview placeholder representing vertical formats */}
                           <div className="portrait-preview-container">
-                            <div className="portrait-preview-mock">
-                              {isCut ? (
-                                <div className="mock-video-active">
-                                  <Play size={20} className="play-icon-mock" />
-                                </div>
-                              ) : (
-                                <div className="mock-video-inactive">
-                                  <span>9:16</span>
-                                </div>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              className="portrait-preview-mock preview-toggle"
+                              onClick={() => setPreviewCandidateId(previewCandidateId === candidate.id ? null : candidate.id)}
+                              title="Preview this source segment"
+                            >
+                              <Play size={20} className="play-icon-mock" />
+                              <span className="preview-label">Preview</span>
+                            </button>
                             <div className="candidate-rank">
                               <span>#{candidate.rank}</span>
                               {candidate.selected && <Check size={14} />}
@@ -990,6 +1022,25 @@ function App() {
                             </div>
                             <h4>{candidate.hook}</h4>
                             <p className="candidate-rationale">{candidate.rationale}</p>
+
+                            {previewCandidateId === candidate.id && (
+                              <div className="candidate-preview">
+                                <video
+                                  controls
+                                  preload="metadata"
+                                  src={convertFileSrc(detail.project.sourcePath)}
+                                  onLoadedMetadata={(event) => {
+                                    event.currentTarget.currentTime = candidate.startSec;
+                                  }}
+                                  onTimeUpdate={(event) => {
+                                    if (event.currentTarget.currentTime >= candidate.endSec) {
+                                      event.currentTarget.pause();
+                                    }
+                                  }}
+                                />
+                                <span>Source preview: plays only {formatTime(candidate.startSec)} to {formatTime(candidate.endSec)}.</span>
+                              </div>
+                            )}
 
                             <div className="candidate-actions">
                               <span className={`clip-status ${isCut ? "ready" : clip?.status === "error" ? "error" : ""}`}>
@@ -1258,6 +1309,12 @@ function formatTime(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60);
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
+}
+
+function formatElapsed(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
 }
 
 interface OnboardingProps {

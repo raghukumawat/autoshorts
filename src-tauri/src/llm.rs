@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -389,11 +390,20 @@ Do NOT return short clips of less than 30 seconds. Combine multiple adjacent sen
 Favor highly shareable content: concrete stories, strong opinions, emotional turns, surprising or counter-intuitive claims, clear payoffs, and high-energy/dramatic peaks. \
 Avoid rambling setup, context-dependent references, and pure filler. \
 You MUST identify and return at least 3-5 candidates (up to 10 candidates). Do not return an empty candidates list. \
-Ensure the 'start' and 'end' values correspond to actual timestamps in the transcript. Do not output 0.0 for start and end times.";
+Ensure the 'start' and 'end' values correspond to actual timestamps in the transcript. Do not output 0.0 for start and end times. \
+Every returned candidate must be a distinct moment: candidates must not overlap in time, and leave at least 5 seconds between one candidate ending and the next beginning.";
 
     let user_content = format!("Transcript:\n{}", segments);
 
-    let response = reqwest::Client::new()
+    // A local 27B model may need time for a long transcript (especially on its
+    // first request while it is being loaded). A clear timeout is better than a
+    // UI operation that appears to be stuck forever.
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10 * 60))
+        .build()
+        .context("creating local Ollama client")?;
+
+    let response = client
         .post("http://localhost:11434/api/chat")
         .json(&json!({
             "model": model_name,
@@ -408,8 +418,10 @@ Ensure the 'start' and 'end' values correspond to actual timestamps in the trans
                 }
             ],
             "stream": false,
+            "keep_alive": "10m",
             "options": {
-                "temperature": 0.2
+                "temperature": 0.2,
+                "num_predict": 1400
             },
             "format": {
                 "type": "object",
@@ -618,7 +630,57 @@ fn parse_candidate_json(text: &str, min_duration: f64) -> Result<Vec<CandidateDr
             .collect::<Vec<_>>();
     }
 
+    Ok(remove_overlapping_candidates(candidates))
+}
+
+/// Retain the strongest distinct moments. LLMs commonly return several
+/// slightly different boundaries for the same conversation beat; presenting
+/// those as separate clips makes the selector misleading.
+fn remove_overlapping_candidates(mut candidates: Vec<CandidateDraft>) -> Vec<CandidateDraft> {
+    const MIN_GAP_SECONDS: f64 = 5.0;
+
+    candidates.retain(|candidate| {
+        candidate.start >= 0.0
+            && candidate.end > candidate.start
+            && !candidate.hook.trim().is_empty()
+    });
     candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
-    candidates.truncate(10);
-    Ok(candidates)
+
+    let mut distinct = Vec::new();
+    for candidate in candidates {
+        let overlaps_existing = distinct.iter().any(|existing: &CandidateDraft| {
+            candidate.start < existing.end + MIN_GAP_SECONDS
+                && candidate.end + MIN_GAP_SECONDS > existing.start
+        });
+
+        if !overlaps_existing {
+            distinct.push(candidate);
+        }
+
+        if distinct.len() == 10 {
+            break;
+        }
+    }
+
+    distinct
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_overlapping_candidates;
+    use crate::models::CandidateDraft;
+
+    #[test]
+    fn retains_only_distinct_time_ranges() {
+        let candidates = vec![
+            CandidateDraft { start: 15.0, end: 72.0, score: 0.95, hook: "Best".into(), rationale: "".into() },
+            CandidateDraft { start: 28.0, end: 94.0, score: 0.90, hook: "Overlap".into(), rationale: "".into() },
+            CandidateDraft { start: 125.0, end: 180.0, score: 0.85, hook: "Distinct".into(), rationale: "".into() },
+        ];
+
+        let distinct = remove_overlapping_candidates(candidates);
+        assert_eq!(distinct.len(), 2);
+        assert_eq!(distinct[0].hook, "Best");
+        assert_eq!(distinct[1].hook, "Distinct");
+    }
 }

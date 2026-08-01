@@ -23,6 +23,18 @@ struct PullProgressPayload {
     percentage: Option<f64>,
 }
 
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+struct OllamaModel {
+    name: String,
+    size: u64,
+    modified_at: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OllamaTagsResponse {
+    models: Vec<OllamaModel>,
+}
+
 #[derive(Clone)]
 struct AppState {
     db: Database,
@@ -147,6 +159,29 @@ async fn pull_ollama_model(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+async fn list_ollama_models() -> Result<Vec<OllamaModel>, String> {
+    let response = reqwest::Client::new()
+        .get("http://localhost:11434/api/tags")
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to Ollama: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama model list returned status {status}: {text}"));
+    }
+
+    let mut payload: OllamaTagsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to read Ollama model list: {e}"))?;
+    payload.models.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(payload.models)
 }
 
 #[tauri::command]
@@ -666,6 +701,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             environment_status,
             pull_ollama_model,
+            list_ollama_models,
             install_ollama,
             create_project_from_path,
             list_projects,

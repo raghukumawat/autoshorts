@@ -40,6 +40,12 @@ type EnvironmentStatus = {
   hasOllama: boolean;
 };
 
+type OllamaModel = {
+  name: string;
+  size: number;
+  modified_at?: string | null;
+};
+
 type Project = {
   id: string;
   name: string | null;
@@ -111,6 +117,19 @@ type BusyState =
   | "clipCount"
   | "cut";
 
+function formatModelSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "size unknown";
+  return `${(bytes / 1024 ** 3).toFixed(bytes >= 10 * 1024 ** 3 ? 0 : 1)} GB`;
+}
+
+function ollamaModelHint(name: string): string {
+  const model = name.toLowerCase();
+  if (model === "qwen3.5:27b") return "Recommended for high-end GPU";
+  if (model === "qwen3.5:9b") return "Fast, lower VRAM option";
+  if (model.includes("coder")) return "Coding-focused model";
+  return "Installed model";
+}
+
 function App() {
   const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -156,6 +175,9 @@ function App() {
   const [downloadingModelName, setDownloadingModelName] = useState<string | null>(null);
   const [modelDownloadStatus, setModelDownloadStatus] = useState("");
   const [modelDownloadProgress, setModelDownloadProgress] = useState(0);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [loadingOllamaModels, setLoadingOllamaModels] = useState(false);
+  const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(null);
 
   const transcript = useMemo(() => {
     if (!detail?.transcript) return null;
@@ -225,6 +247,14 @@ function App() {
   }, [localLlmModel]);
 
   useEffect(() => {
+    if (!environment?.hasOllama) {
+      setOllamaModels([]);
+      return;
+    }
+    void refreshOllamaModels();
+  }, [environment?.hasOllama]);
+
+  useEffect(() => {
     localStorage.setItem("autoshorts_deepgram_key", deepgramKey);
   }, [deepgramKey]);
 
@@ -267,6 +297,7 @@ function App() {
       });
 
       await invoke("pull_ollama_model", { modelName });
+      await refreshOllamaModels();
       unlisten();
       setModelDownloadStatus("Download complete!");
       setModelDownloadProgress(100);
@@ -274,6 +305,20 @@ function App() {
     } catch (err) {
       alert("Failed to download model: " + String(err));
       setDownloadingModelName(null);
+    }
+  };
+
+  const refreshOllamaModels = async () => {
+    if (!environment?.hasOllama) return;
+    setLoadingOllamaModels(true);
+    setOllamaModelsError(null);
+    try {
+      const models = await invoke<OllamaModel[]>("list_ollama_models");
+      setOllamaModels(models);
+    } catch (err) {
+      setOllamaModelsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingOllamaModels(false);
     }
   };
 
@@ -753,12 +798,46 @@ function App() {
 
                     {llmEngine === "local" && (
                       <label>
-                        <span>Ollama Model Name</span>
+                        <span>Installed Ollama Models</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <select
+                            value={localLlmModel}
+                            onChange={(event) => setLocalLlmModel(event.target.value)}
+                            disabled={!environment?.hasOllama || loadingOllamaModels}
+                            style={{ flex: 1 }}
+                          >
+                            {localLlmModel && !ollamaModels.some((model) => model.name === localLlmModel) && (
+                              <option value={localLlmModel}>{localLlmModel} (not installed)</option>
+                            )}
+                            {ollamaModels.length === 0 && (
+                              <option value="">{loadingOllamaModels ? "Loading installed models..." : "No installed models found"}</option>
+                            )}
+                            {ollamaModels.map((model) => (
+                              <option key={model.name} value={model.name}>
+                                {model.name} — {formatModelSize(model.size)} · {ollamaModelHint(model.name)}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            style={{ minHeight: '36px', height: '36px' }}
+                            onClick={() => void refreshOllamaModels()}
+                            disabled={!environment?.hasOllama || loadingOllamaModels}
+                            title="Refresh installed Ollama models"
+                          >
+                            <RefreshCw className={loadingOllamaModels ? "spin" : ""} size={14} /> Refresh
+                          </button>
+                        </div>
+                        {ollamaModelsError && (
+                          <small style={{ color: '#f87171', marginTop: '6px' }}>{ollamaModelsError}</small>
+                        )}
+                        <span style={{ marginTop: '12px' }}>Pull another Ollama model</span>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <input
                             value={localLlmModel}
                             onChange={(event) => setLocalLlmModel(event.target.value)}
-                            placeholder="e.g. llama3.2, qwen2.5:7b"
+                            placeholder="e.g. qwen3.5:27b"
                             type="text"
                           />
                           <button

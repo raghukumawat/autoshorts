@@ -1088,9 +1088,9 @@ function App() {
                                     return next;
                                   })}
                                   disabled={busy !== "idle"}
-                                  title="Use only for wide scenes with multiple people or an important object"
+                                  title="Auto frame is the default. Click only to force the full scene for a wide multi-person or object shot."
                                 >
-                                  {fitScene ? "Fit scene + blur" : "Auto speaker (fast)"}
+                                  {fitScene ? "Force scene-fit + blur" : "Auto frame: speaker"}
                                 </button>
                               </div>
                               <button

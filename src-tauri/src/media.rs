@@ -108,6 +108,7 @@ pub fn render_flat_clip(
     output_path: &Path,
     drawtext_filters: Option<&str>,
     fit_scene: bool,
+    focus_x: Option<f64>,
 ) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
         return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
@@ -135,6 +136,7 @@ pub fn render_flat_clip(
         drawtext_filters,
         has_video,
         fit_scene,
+        focus_x,
         use_nvenc,
     ) {
         if !use_nvenc {
@@ -148,6 +150,7 @@ pub fn render_flat_clip(
             drawtext_filters,
             has_video,
             fit_scene,
+            focus_x,
             false,
         )
         .with_context(|| format!("NVENC render failed ({nvenc_error}); software fallback also failed"))?;
@@ -172,6 +175,7 @@ fn run_render_command(
     drawtext_filters: Option<&str>,
     has_video: bool,
     fit_scene: bool,
+    focus_x: Option<f64>,
     use_nvenc: bool,
 ) -> Result<()> {
     let mut cmd = Command::new("ffmpeg");
@@ -184,9 +188,12 @@ fn run_render_command(
             // is a blurred copy of the same source video.
             "[0:v]split=2[bgsrc][fgsrc];[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg];[fgsrc]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h):shortest=1,setsar=1".to_string()
         } else {
-            // Fast default for one centered speaker: no blurred background and
-            // no extra upscale, so the portrait clip renders much faster.
-            "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)',setsar=1".to_string()
+            // Fast portrait crop. When the vision helper detects a face, move
+            // the crop around that face instead of assuming source center.
+            let focus_x = focus_x.unwrap_or(0.5).clamp(0.0, 1.0);
+            format!(
+                "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x='max(0,min(iw-ow,iw*{focus_x:.6}-ow/2))':y='(ih-oh)/2',setsar=1"
+            )
         };
         if let Some(drawtext) = drawtext_filters {
             if !drawtext.is_empty() {

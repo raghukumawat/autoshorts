@@ -3,6 +3,7 @@ mod llm;
 mod media;
 mod models;
 mod transcription;
+mod vision;
 
 use std::{path::PathBuf, process::Command};
 
@@ -573,7 +574,33 @@ fn render_flat_clip_for_candidate(
 
     let mut srt_path = None;
     let mut drawtext_filters = None;
-    let fit_scene = fit_scene.unwrap_or(false);
+    let requested_fit_scene = fit_scene.unwrap_or(false);
+    let face_focus = vision::detect_face_focus(
+        &project.source_path,
+        candidate.start_sec,
+        candidate.end_sec,
+        &state.data_dir.join("vision"),
+    )
+    .ok()
+    .flatten();
+    let fit_scene = requested_fit_scene
+        || face_focus
+            .as_ref()
+            .map(|focus| focus.needs_scene_fit)
+            .unwrap_or(false);
+    let focus_x = face_focus.as_ref().and_then(|focus| focus.focus_x);
+
+    let face_track_json = serde_json::json!({
+        "mode": if fit_scene { "fit-scene" } else if focus_x.is_some() { "auto-speaker" } else { "center-fallback" },
+        "focusX": focus_x,
+        "multipleFaces": face_focus.as_ref().map(|focus| focus.needs_scene_fit).unwrap_or(false),
+        "samples": face_focus.as_ref().map(|focus| focus.samples).unwrap_or(0),
+    })
+    .to_string();
+    state
+        .db
+        .update_clip_face_track(&candidate_id, &face_track_json)
+        .map_err(to_command_error)?;
 
     let cropped_width = if fit_scene {
         1080
@@ -613,6 +640,7 @@ fn render_flat_clip_for_candidate(
         &output_path,
         drawtext_filters.as_deref(),
         fit_scene,
+        focus_x,
     ) {
         Ok(path) => {
             let path_string = path.to_string_lossy().to_string();
@@ -639,6 +667,7 @@ fn render_flat_clip_for_candidate(
                 &output_path,
                 None,
                 fit_scene,
+                focus_x,
             ) {
                 Ok(path) => {
                     let path_string = path.to_string_lossy().to_string();

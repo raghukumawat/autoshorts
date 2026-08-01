@@ -381,6 +381,15 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_clip_face_track(&self, candidate_id: &str, face_track_json: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "UPDATE clips SET face_track_json = ?1 WHERE candidate_id = ?2",
+            params![face_track_json, candidate_id],
+        )?;
+        Ok(())
+    }
+
     pub fn set_selected_clip_count(
         &self,
         project_id: &str,

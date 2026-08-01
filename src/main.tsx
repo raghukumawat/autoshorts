@@ -131,6 +131,19 @@ function ollamaModelHint(name: string): string {
   return "Installed model";
 }
 
+function framingLabel(faceTrackJson: string | null): string | null {
+  if (!faceTrackJson) return null;
+  try {
+    const tracking = JSON.parse(faceTrackJson) as { mode?: string; samples?: number };
+    if (tracking.mode === "auto-speaker") return `Auto speaker focus (${tracking.samples ?? 0} face samples)`;
+    if (tracking.mode === "fit-scene") return "Auto fit scene + blurred background";
+    if (tracking.mode === "center-fallback") return "Face not found: center-crop fallback";
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function App() {
   const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1014,6 +1027,7 @@ function App() {
                       const clip = clipByCandidate.get(candidate.id);
                       const isCut = clip?.status === "done" && Boolean(clip.outputPath);
                       const fitScene = fitSceneCandidateIds.has(candidate.id);
+                      const trackingLabel = framingLabel(clip?.faceTrackJson ?? null);
                       return (
                         <article key={candidate.id} className={`candidate-card ${candidate.selected ? "selected" : ""}`}>
                           <div className="portrait-preview-container">
@@ -1076,7 +1090,7 @@ function App() {
                                   disabled={busy !== "idle"}
                                   title="Use only for wide scenes with multiple people or an important object"
                                 >
-                                  {fitScene ? "Fit scene + blur" : "Focus crop (fast)"}
+                                  {fitScene ? "Fit scene + blur" : "Auto speaker (fast)"}
                                 </button>
                               </div>
                               <button
@@ -1105,6 +1119,7 @@ function App() {
                                 </button>
                               </div>
                             )}
+                            {trackingLabel && <div className="frame-status">{trackingLabel}</div>}
                             {clip?.captionAssPath && (
                               <div className="output-path" style={{ background: "rgba(142, 230, 199, 0.05)", borderColor: "var(--accent-primary)", color: "var(--accent-primary)", marginTop: "4px" }}>
                                 Subtitles: {clip.captionAssPath}

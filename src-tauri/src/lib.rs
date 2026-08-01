@@ -4,7 +4,7 @@ mod media;
 mod models;
 mod transcription;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
 
 use anyhow::{anyhow, Context, Result};
 use tauri::{Emitter, Manager};
@@ -673,6 +673,35 @@ fn render_flat_clip_for_candidate(
 }
 
 #[tauri::command]
+fn reveal_export_in_folder(output_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&output_path);
+    if !path.is_file() {
+        return Err("The exported clip could not be found on disk yet.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map_err(to_command_error)?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let folder = path
+            .parent()
+            .ok_or_else(|| "Could not find the export folder.".to_string())?;
+        Command::new("open")
+            .arg(folder)
+            .spawn()
+            .map_err(to_command_error)?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
 fn delete_project(state: tauri::State<'_, AppState>, project_id: String) -> Result<(), String> {
     state.db.delete_project(&project_id).map_err(to_command_error)
 }
@@ -717,6 +746,7 @@ pub fn run() {
             generate_candidates,
             set_selected_clip_count,
             render_flat_clip_for_candidate,
+            reveal_export_in_folder,
             delete_project,
             rename_project
         ])

@@ -805,6 +805,37 @@ button:disabled {
   font-family: 'JetBrains Mono', monospace;
 }
 
+.output-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.output-actions .output-path {
+  flex: 1;
+  margin-top: 0;
+}
+
+.output-folder-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 106px;
+  padding: 0 10px;
+  color: var(--accent-text);
+  background: rgba(142, 230, 199, 0.1);
+  border: 1px solid var(--accent-primary);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.output-folder-button:hover {
+  background: rgba(142, 230, 199, 0.18);
+}
+
 .output-path {
   color: var(--color-success-text);
   background: var(--color-success-bg);

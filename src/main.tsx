@@ -12,6 +12,7 @@ import {
   Clapperboard,
   Download,
   FileVideo,
+  FolderOpen,
   Loader2,
   Play,
   RefreshCw,
@@ -638,6 +639,14 @@ function App() {
     }
   }
 
+  async function revealExport(outputPath: string) {
+    try {
+      await invoke("reveal_export_in_folder", { outputPath });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   if (isOnboarded === null) {
     return (
       <div className="onboarding-loading" style={{ display: 'grid', placeItems: 'center', height: '100vh', background: 'var(--bg-base)' }}>
@@ -1083,7 +1092,19 @@ function App() {
                                 {renderingCandidateId === candidate.id ? "Cutting..." : isCut ? "Re-cut" : "Cut"}
                               </button>
                             </div>
-                            {clip?.outputPath && <div className="output-path">{clip.outputPath}</div>}
+                            {clip?.outputPath && (
+                              <div className="output-actions">
+                                <div className="output-path">{clip.outputPath}</div>
+                                <button
+                                  type="button"
+                                  className="output-folder-button"
+                                  onClick={() => void revealExport(clip.outputPath!)}
+                                >
+                                  <FolderOpen size={14} />
+                                  Open folder
+                                </button>
+                              </div>
+                            )}
                             {clip?.captionAssPath && (
                               <div className="output-path" style={{ background: "rgba(142, 230, 199, 0.05)", borderColor: "var(--accent-primary)", color: "var(--accent-primary)", marginTop: "4px" }}>
                                 Subtitles: {clip.captionAssPath}

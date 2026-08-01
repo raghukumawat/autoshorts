@@ -142,6 +142,7 @@ function App() {
   const [selectedStyle, setSelectedStyle] = useState("modern-box");
   const [mediaPathToImport, setMediaPathToImport] = useState<string | null>(null);
   const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(null);
+  const [fitSceneCandidateIds, setFitSceneCandidateIds] = useState<Set<string>>(() => new Set());
   const [busyElapsedSeconds, setBusyElapsedSeconds] = useState(0);
 
   // Persistence logic from localStorage
@@ -603,7 +604,10 @@ function App() {
     setBusy("cut");
     setError(null);
     try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId });
+      await invoke<string>("render_flat_clip_for_candidate", {
+        candidateId,
+        fitScene: fitSceneCandidateIds.has(candidateId),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -620,7 +624,10 @@ function App() {
     try {
       for (const candidate of selectedCandidates) {
         setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id });
+        await invoke<string>("render_flat_clip_for_candidate", {
+          candidateId: candidate.id,
+          fitScene: fitSceneCandidateIds.has(candidate.id),
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -997,6 +1004,7 @@ function App() {
                     {detail.candidates.map((candidate) => {
                       const clip = clipByCandidate.get(candidate.id);
                       const isCut = clip?.status === "done" && Boolean(clip.outputPath);
+                      const fitScene = fitSceneCandidateIds.has(candidate.id);
                       return (
                         <article key={candidate.id} className={`candidate-card ${candidate.selected ? "selected" : ""}`}>
                           <div className="portrait-preview-container">
@@ -1043,9 +1051,25 @@ function App() {
                             )}
 
                             <div className="candidate-actions">
-                              <span className={`clip-status ${isCut ? "ready" : clip?.status === "error" ? "error" : ""}`}>
-                                {isCut ? "Cut ready" : clip?.status === "error" ? "Cut failed" : clip?.status ?? "Pending"}
-                              </span>
+                              <div className="candidate-action-left">
+                                <span className={`clip-status ${isCut ? "ready" : clip?.status === "error" ? "error" : ""}`}>
+                                  {isCut ? "Cut ready" : clip?.status === "error" ? "Cut failed" : clip?.status ?? "Pending"}
+                                </span>
+                                <button
+                                  type="button"
+                                  className={`frame-mode-button ${fitScene ? "active" : ""}`}
+                                  onClick={() => setFitSceneCandidateIds((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(candidate.id)) next.delete(candidate.id);
+                                    else next.add(candidate.id);
+                                    return next;
+                                  })}
+                                  disabled={busy !== "idle"}
+                                  title="Use only for wide scenes with multiple people or an important object"
+                                >
+                                  {fitScene ? "Fit scene + blur" : "Focus crop (fast)"}
+                                </button>
+                              </div>
                               <button
                                 className="cut-button"
                                 onClick={() => void cutCandidate(candidate.id)}

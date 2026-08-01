@@ -556,6 +556,7 @@ fn set_selected_clip_count(
 fn render_flat_clip_for_candidate(
     state: tauri::State<'_, AppState>,
     candidate_id: String,
+    fit_scene: Option<bool>,
 ) -> Result<String, String> {
     let (candidate, project) = state
         .db
@@ -572,10 +573,17 @@ fn render_flat_clip_for_candidate(
 
     let mut srt_path = None;
     let mut drawtext_filters = None;
+    let fit_scene = fit_scene.unwrap_or(false);
 
-    // render_flat_clip now produces a fixed 1080x1920 portrait canvas.
-    // Use that canvas width when positioning caption text.
-    let cropped_width = 1080;
+    let cropped_width = if fit_scene {
+        1080
+    } else if let Ok(probe) = media::probe_media(&project.source_path) {
+        let iw = probe.width.unwrap_or(1920) as f64;
+        let ih = probe.height.unwrap_or(1080) as f64;
+        (iw.min(ih * 9.0 / 16.0) / 2.0).floor() as i64 * 2
+    } else {
+        1080
+    };
 
     if let Ok(Some(transcript_record)) = state.db.latest_transcript(&project.id) {
         if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {
@@ -604,6 +612,7 @@ fn render_flat_clip_for_candidate(
         candidate.end_sec,
         &output_path,
         drawtext_filters.as_deref(),
+        fit_scene,
     ) {
         Ok(path) => {
             let path_string = path.to_string_lossy().to_string();
@@ -629,6 +638,7 @@ fn render_flat_clip_for_candidate(
                 candidate.end_sec,
                 &output_path,
                 None,
+                fit_scene,
             ) {
                 Ok(path) => {
                     let path_string = path.to_string_lossy().to_string();

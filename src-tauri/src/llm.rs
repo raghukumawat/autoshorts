@@ -418,10 +418,12 @@ Every returned candidate must be a distinct moment: candidates must not overlap 
                 }
             ],
             "stream": false,
+            "think": false,
             "keep_alive": "10m",
             "options": {
                 "temperature": 0.2,
-                "num_predict": 1400
+                "num_predict": 1400,
+                "num_ctx": 16384
             },
             "format": {
                 "type": "object",
@@ -488,7 +490,7 @@ fn parse_candidate_json(text: &str, min_duration: f64) -> Result<Vec<CandidateDr
         .trim_end_matches("```")
         .trim();
 
-    let val: serde_json::Value = serde_json::from_str(trimmed).context("parsing candidate JSON")?;
+    let val = parse_json_from_model_output(trimmed)?;
 
     let candidates_arr = if val.is_array() {
         val.as_array().cloned()
@@ -633,6 +635,73 @@ fn parse_candidate_json(text: &str, min_duration: f64) -> Result<Vec<CandidateDr
     Ok(remove_overlapping_candidates(candidates))
 }
 
+/// Qwen models may put a short thinking block or Markdown around the structured
+/// result even when Ollama is asked for JSON. Find the first valid JSON value
+/// instead of failing the entire analysis on that wrapper text.
+fn parse_json_from_model_output(text: &str) -> Result<serde_json::Value> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        return decode_embedded_json(value);
+    }
+
+    for (index, character) in text.char_indices() {
+        if character != '{' && character != '[' {
+            continue;
+        }
+        if let Some(candidate) = balanced_json_value(&text[index..]) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) {
+                return decode_embedded_json(value);
+            }
+        }
+    }
+
+    let preview: String = text.chars().take(700).collect();
+    Err(anyhow!(
+        "parsing candidate JSON. Ollama response started with: {}",
+        preview
+    ))
+}
+
+fn decode_embedded_json(value: serde_json::Value) -> Result<serde_json::Value> {
+    if let Some(inner) = value.as_str() {
+        serde_json::from_str(inner).context("parsing JSON string returned by Ollama")
+    } else {
+        Ok(value)
+    }
+}
+
+fn balanced_json_value(text: &str) -> Option<&str> {
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, character) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_string = true,
+            '{' | '[' => depth += 1,
+            '}' | ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[..index + character.len_utf8()]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 /// Retain the strongest distinct moments. LLMs commonly return several
 /// slightly different boundaries for the same conversation beat; presenting
 /// those as separate clips makes the selector misleading.
@@ -682,5 +751,13 @@ mod tests {
         assert_eq!(distinct.len(), 2);
         assert_eq!(distinct[0].hook, "Best");
         assert_eq!(distinct[1].hook, "Distinct");
+    }
+
+    #[test]
+    fn parses_qwen_json_after_thinking_text() {
+        let output = "<think>Checking timestamps.</think>\n{\"candidates\":[{\"start\":15,\"end\":75,\"score\":0.9,\"hook\":\"A real hook\",\"rationale\":\"Strong moment\"}]}";
+        let candidates = super::parse_candidate_json(output, 30.0).expect("candidate JSON should parse");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].start, 15.0);
     }
 }

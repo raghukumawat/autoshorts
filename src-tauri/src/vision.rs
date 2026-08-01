@@ -5,11 +5,19 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FaceFocusPoint {
+    pub time: f64,
+    pub focus_x: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FaceFocus {
     pub focus_x: Option<f64>,
     pub needs_scene_fit: bool,
     pub samples: usize,
     pub faces_seen: usize,
+    pub track: Vec<FaceFocusPoint>,
 }
 
 pub fn detect_face_focus(
@@ -82,7 +90,7 @@ end_frame = min(int(end_sec * fps), int(frame_count)) if frame_count else int(en
 sample_every = max(1, int(round(fps / 4.0)))
 cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
-centers = []
+track = []
 last_center = None
 faces_seen = 0
 needs_scene_fit = False
@@ -127,22 +135,34 @@ with mp.solutions.face_detection.FaceDetection(model_selection=1, min_detection_
                         key=lambda item: item["area"] * 0.7 + (1.0 - min(1.0, abs(item["x"] - last_center))) * 0.3,
                     )
                 last_center = chosen["x"]
-                centers.append(last_center)
+                track.append({"time": (frame_index - start_frame) / fps, "focusX": last_center})
                 faces_seen += len(detections)
 
         frame_index += 1
 
 cap.release()
 
+# Smooth only adjacent samples. A cut to a new camera/speaker gets a quick,
+# controlled pan instead of locking the crop to the old face for the clip.
+smoothed_track = []
+for point in track:
+    if smoothed_track and point["time"] - smoothed_track[-1]["time"] <= 1.0:
+        smooth_x = smoothed_track[-1]["focusX"] * 0.42 + point["focusX"] * 0.58
+    else:
+        smooth_x = point["focusX"]
+    smoothed_track.append({"time": point["time"], "focusX": max(0.0, min(1.0, smooth_x))})
+
 focus_x = None
-if centers:
-    # Median ignores a brief false detection and gives a stable speaker focus.
-    focus_x = max(0.0, min(1.0, statistics.median(centers)))
+if smoothed_track:
+    # Median is retained only as a fallback when an individual crop frame
+    # cannot evaluate a tracking point.
+    focus_x = max(0.0, min(1.0, statistics.median(item["focusX"] for item in smoothed_track)))
 
 print(json.dumps({
     "focusX": focus_x,
     "needsSceneFit": needs_scene_fit,
-    "samples": len(centers),
+    "samples": len(smoothed_track),
     "facesSeen": faces_seen,
+    "track": smoothed_track,
 }))
 "#;

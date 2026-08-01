@@ -583,18 +583,28 @@ fn render_flat_clip_for_candidate(
     )
     .ok()
     .flatten();
-    let fit_scene = requested_fit_scene
-        || face_focus
-            .as_ref()
-            .map(|focus| focus.needs_scene_fit)
-            .unwrap_or(false);
+    // Scene-fit remains an explicit override for now. Applying blur to an
+    // entire clip merely because one wide shot contains two faces would create
+    // the same problem the user reported; dynamic scene-fit is a later stage.
+    let fit_scene = requested_fit_scene;
     let focus_x = face_focus.as_ref().and_then(|focus| focus.focus_x);
+    let focus_track = face_focus
+        .as_ref()
+        .map(|focus| {
+            focus
+                .track
+                .iter()
+                .map(|point| (point.time, point.focus_x))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let face_track_json = serde_json::json!({
         "mode": if fit_scene { "fit-scene" } else if focus_x.is_some() { "auto-speaker" } else { "center-fallback" },
         "focusX": focus_x,
         "multipleFaces": face_focus.as_ref().map(|focus| focus.needs_scene_fit).unwrap_or(false),
         "samples": face_focus.as_ref().map(|focus| focus.samples).unwrap_or(0),
+        "trackPoints": focus_track.len(),
     })
     .to_string();
     state
@@ -641,6 +651,7 @@ fn render_flat_clip_for_candidate(
         drawtext_filters.as_deref(),
         fit_scene,
         focus_x,
+        &focus_track,
     ) {
         Ok(path) => {
             let path_string = path.to_string_lossy().to_string();
@@ -668,6 +679,7 @@ fn render_flat_clip_for_candidate(
                 None,
                 fit_scene,
                 focus_x,
+                &focus_track,
             ) {
                 Ok(path) => {
                     let path_string = path.to_string_lossy().to_string();

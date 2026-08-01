@@ -135,7 +135,7 @@ function framingLabel(faceTrackJson: string | null): string | null {
   if (!faceTrackJson) return null;
   try {
     const tracking = JSON.parse(faceTrackJson) as { mode?: string; samples?: number };
-    if (tracking.mode === "auto-speaker") return `Auto speaker focus (${tracking.samples ?? 0} face samples)`;
+    if (tracking.mode === "auto-speaker") return `Auto speaker tracking (${tracking.samples ?? 0} face samples)`;
     if (tracking.mode === "fit-scene") return "Auto fit scene + blurred background";
     if (tracking.mode === "center-fallback") return "Face not found: center-crop fallback";
   } catch {

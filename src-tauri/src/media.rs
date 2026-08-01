@@ -109,6 +109,7 @@ pub fn render_flat_clip(
     drawtext_filters: Option<&str>,
     fit_scene: bool,
     focus_x: Option<f64>,
+    focus_track: &[(f64, f64)],
 ) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
         return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
@@ -137,6 +138,7 @@ pub fn render_flat_clip(
         has_video,
         fit_scene,
         focus_x,
+        focus_track,
         use_nvenc,
     ) {
         if !use_nvenc {
@@ -151,6 +153,7 @@ pub fn render_flat_clip(
             has_video,
             fit_scene,
             focus_x,
+            focus_track,
             false,
         )
         .with_context(|| format!("NVENC render failed ({nvenc_error}); software fallback also failed"))?;
@@ -176,6 +179,7 @@ fn run_render_command(
     has_video: bool,
     fit_scene: bool,
     focus_x: Option<f64>,
+    focus_track: &[(f64, f64)],
     use_nvenc: bool,
 ) -> Result<()> {
     let mut cmd = Command::new("ffmpeg");
@@ -188,11 +192,12 @@ fn run_render_command(
             // is a blurred copy of the same source video.
             "[0:v]split=2[bgsrc][fgsrc];[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg];[fgsrc]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h):shortest=1,setsar=1".to_string()
         } else {
-            // Fast portrait crop. When the vision helper detects a face, move
-            // the crop around that face instead of assuming source center.
-            let focus_x = focus_x.unwrap_or(0.5).clamp(0.0, 1.0);
+            // Fast portrait crop. The face tracker supplies a time-based focus
+            // path, so camera/speaker changes pan the crop smoothly instead of
+            // using one average location for the entire clip.
+            let focus_expression = focus_track_expression(focus_track, focus_x.unwrap_or(0.5));
             format!(
-                "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x='max(0,min(iw-ow,iw*{focus_x:.6}-ow/2))':y='(ih-oh)/2',setsar=1"
+                "setpts=PTS-STARTPTS,crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x='max(0\\,min(iw-ow\\,iw*({focus_expression})-ow/2))':y='(ih-oh)/2',setsar=1"
             )
         };
         if let Some(drawtext) = drawtext_filters {
@@ -221,5 +226,54 @@ fn run_render_command(
             "ffmpeg clip render failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ))
+    }
+}
+
+fn focus_track_expression(track: &[(f64, f64)], fallback: f64) -> String {
+    let mut points = track
+        .iter()
+        .filter_map(|(time, focus_x)| {
+            (time.is_finite() && focus_x.is_finite())
+                .then_some((time.max(0.0), focus_x.clamp(0.0, 1.0)))
+        })
+        .collect::<Vec<_>>();
+    points.sort_by(|left, right| left.0.total_cmp(&right.0));
+
+    let fallback = fallback.clamp(0.0, 1.0);
+    if points.is_empty() {
+        return format!("{fallback:.6}");
+    }
+
+    let mut expression = format!("{:.6}", points.last().expect("non-empty points").1);
+    for pair in points.windows(2).rev() {
+        let (start_time, start_x) = pair[0];
+        let (end_time, end_x) = pair[1];
+        let duration = (end_time - start_time).max(0.05);
+        let interpolated = format!(
+            "{start_x:.6}+({end_x:.6}-{start_x:.6})*(t-{start_time:.3})/{duration:.3}"
+        );
+        expression = format!(
+            "if(lt(t\\,{end_time:.3})\\,{interpolated}\\,{expression})"
+        );
+    }
+
+    let (first_time, first_x) = points[0];
+    if first_time > 0.0 {
+        format!("if(lt(t\\,{first_time:.3})\\,{first_x:.6}\\,{expression})")
+    } else {
+        expression
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::focus_track_expression;
+
+    #[test]
+    fn builds_a_time_based_focus_path() {
+        let expression = focus_track_expression(&[(0.0, 0.25), (0.5, 0.75)], 0.5);
+        assert!(expression.contains("lt(t\\,0.500)"));
+        assert!(expression.contains("0.250000"));
+        assert!(expression.contains("0.750000"));
     }
 }

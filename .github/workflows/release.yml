@@ -3,17 +3,13 @@ name: Release App
 on:
   push:
     tags:
-      - 'v*' # Triggers on release tags like v0.1.0 or v1.0.0
+      - 'v*'
 
 jobs:
   release:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [macos-latest, ubuntu-22.04, windows-latest]
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,13 +22,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Install Linux build dependencies
-      - name: Install Linux dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
       - name: Install node modules
         run: npm ci
 
@@ -43,6 +32,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'AutoShorts ${{ github.ref_name }}'
-          releaseBody: 'See release notes for installation details.'
+          releaseBody: 'Windows-only build for private local use.'
           releaseDraft: true
           prerelease: false

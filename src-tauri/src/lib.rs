@@ -898,7 +898,10 @@ fn build_drawtext_filters(
                     .replace(':', "\\:")
                     .replace('\'', "\\'")
                     .replace(' ', "\\ ");
-                font_option = format!("fontfile={}:", escaped_path);
+                // FFmpeg treats the drive-letter colon in Windows font paths as a
+                // filter-option separator unless the complete path is quoted.
+                // Example: fontfile='C\:/Windows/Fonts/SegoeUIb.ttf'
+                font_option = format!("fontfile='{}':", escaped_path);
                 break;
             }
         }
